@@ -965,8 +965,8 @@ button.mtr:active .sv{opacity:.5}
 </style><style>html,body{min-height:100%;background-color:var(--stage)}
 @media (max-width:440px){
   :root{--status-h:calc(env(safe-area-inset-top,0px) + 14px)}
-  .device .phone{height:100vh;height:100dvh}
-  .screen{padding-bottom:env(safe-area-inset-bottom,0px)}
+  .device .phone{position:fixed;top:0;right:0;bottom:0;left:0;width:auto;height:auto}
+  .screen .scroll::after{content:"";display:block;flex:none;height:env(safe-area-inset-bottom,0px)}
 }</style></head><body>
 <script>document.body.classList.add("nopanel")</script>
 <div class="stage">
