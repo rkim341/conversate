@@ -962,7 +962,12 @@ button.mtr:active .sv{opacity:.5}
   body:not(.nopanel) .panel{position:fixed;inset:0;z-index:300;flex:none;width:auto;max-width:none;max-height:none;box-sizing:border-box;border-radius:0;overflow-y:auto;padding:max(var(--s5),env(safe-area-inset-top,0px)) var(--s5) max(var(--s5),env(safe-area-inset-bottom,0px))}
   .logo{cursor:pointer;-webkit-tap-highlight-color:transparent}
 }
-</style></head><body>
+</style><style>html,body{min-height:100%;background-color:var(--stage)}
+@media (max-width:440px){
+  :root{--status-h:calc(env(safe-area-inset-top,0px) + 14px)}
+  .device .phone{height:100vh;height:100dvh}
+  .screen{padding-bottom:env(safe-area-inset-bottom,0px)}
+}</style></head><body>
 <script>document.body.classList.add("nopanel")</script>
 <div class="stage">
   <div class="device" id="device">
