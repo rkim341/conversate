@@ -1,9 +1,120 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conversate Prototype</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Conversate</title>
+<meta name="application-name" content="Conversate">
+<meta name="apple-mobile-web-app-title" content="Conversate">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#F6F6F6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/hanken-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Hanken Grotesk";font-weight:400;font-style:normal;font-display:swap;src:url(fonts/hanken-400.woff2) format("woff2")}
+@font-face{font-family:"Hanken Grotesk";font-weight:500;font-style:normal;font-display:swap;src:url(fonts/hanken-500.woff2) format("woff2")}
+@font-face{font-family:"DM Mono";font-weight:400;font-style:normal;font-display:swap;src:url(fonts/dm-mono-400.woff2) format("woff2")}
+html{-webkit-text-size-adjust:100%}
+body{-webkit-touch-callout:none;overscroll-behavior:none}
+</style><script>/* Conversate app shim: dictation via Web Speech API + real audio capture for Listen Back */
+(function(){
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var L={state:[],final:[],partial:[]};
+function emit(t,a){L[t].forEach(function(f){try{f(a)}catch(e){}})}
+var rec=null,want=false,act=false,announced=false,pend=null,endCb=[];
+function spawn(){
+  var r=new SR();rec=r;r.continuous=true;r.interimResults=true;r.lang=(navigator.language||'en-US');
+  r.onstart=function(){act=true;if(!announced){announced=true;emit('state',{state:'listening'})}if(pend){pend.res();pend=null}};
+  r.onresult=function(e){
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var t=e.results[i][0].transcript;
+      if(e.results[i].isFinal)emit('final',{text:' '+t.trim()});else interim+=t;
+    }
+    if(interim)emit('partial',{text:interim.trim()});
+  };
+  r.onerror=function(e){
+    var c=e.error;
+    if(c==='no-speech'||c==='aborted')return;
+    if(c==='not-allowed'||c==='service-not-allowed'||c==='audio-capture'||c==='language-not-supported'){
+      want=false;
+      if(pend){pend.rej({code:c==='not-allowed'||c==='service-not-allowed'?'not_granted':c});pend=null}
+    }
+  };
+  r.onend=function(){
+    act=false;
+    if(want&&rec===r){setTimeout(function(){if(want){try{spawn();rec.start()}catch(e){want=false;finish()}}},120);return}
+    finish();
+  };
+}
+function finish(){
+  var was=announced;announced=false;rec=null;act=false;
+  if(was)emit('state',{state:'idle',reason:'stopped'});
+  var cbs=endCb;endCb=[];cbs.forEach(function(f){f()});
+}
+var D={
+  start:function(){
+    return new Promise(function(res,rej){
+      if(!SR){rej({code:'unsupported'});return}
+      if(rec&&want){res();return}
+      want=true;pend={res:res,rej:rej};
+      try{spawn();rec.start()}catch(e){want=false;pend=null;rej({code:'start_failed'})}
+    });
+  },
+  stop:function(){
+    return new Promise(function(res){
+      want=false;
+      if(!rec){res();return}
+      endCb.push(res);
+      try{rec.stop()}catch(e){finish()}
+    });
+  },
+  active:function(){return act},
+  onState:function(f){L.state.push(f)},
+  onFinal:function(f){L.final.push(f)},
+  onPartial:function(f){L.partial.push(f)}
+};
+window.claude={use:function(n){return Promise.resolve(n==='dictation'&&SR?D:null)}};
+
+/* ---- real audio for Listen Back ---- */
+var REC={},mr=null,chunks=[],t0=0,KEY='conversate-rec';
+function recOn(){try{return localStorage.getItem(KEY)!=='0'}catch(e){return true}}
+window.__recStart=function(st){
+  if(!recOn()||!window.MediaRecorder)return;
+  try{
+    var mt=['audio/mp4','audio/webm;codecs=opus','audio/webm'].filter(function(m){return MediaRecorder.isTypeSupported(m)})[0];
+    mr=mt?new MediaRecorder(st,{mimeType:mt}):new MediaRecorder(st);chunks=[];
+    mr.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};
+    t0=performance.now();mr.start(250);
+  }catch(e){mr=null}
+};
+window.__recStop=function(kind){
+  var m=mr;if(!m)return;mr=null;
+  var dur=(performance.now()-t0)/1000,cs=chunks;chunks=[];
+  m.onstop=function(){
+    if(!cs.length||dur<1)return;
+    var b=new Blob(cs,{type:m.mimeType||'audio/webm'});
+    if(REC[kind])try{URL.revokeObjectURL(REC[kind].url)}catch(e){}
+    REC[kind]={url:URL.createObjectURL(b),dur:dur};
+  };
+  try{if(m.state!=='inactive')m.stop()}catch(e){}
+};
+window.__recGet=function(k){return REC[k]||null};
+/* Settings toggle in the side panel */
+addEventListener('DOMContentLoaded',function(){
+  var r=document.getElementById('reset');if(!r)return;
+  var h=document.createElement('h2');h.textContent='Recording';
+  var seg=document.createElement('div');seg.className='seg';seg.id='recseg';
+  seg.innerHTML='<button type="button" data-r="1">Save Audio</button><button type="button" data-r="0">Off</button>';
+  function sync(){[].forEach.call(seg.children,function(b){b.classList.toggle('sel',(b.dataset.r==='1')===recOn())})}
+  seg.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;try{localStorage.setItem(KEY,b.dataset.r)}catch(x){}sync()});
+  sync();
+  var prev=r.previousElementSibling;/* the "Settings" h2 */
+  prev.parentNode.insertBefore(h,prev);prev.parentNode.insertBefore(seg,prev);
+});
+})();
+</script>
 <style>
 /* ===== Conversate design system: tokens + shared components =====
    Type: Hanken Grotesk 400 (500 on the home header only). Space: 4px grid. One glass button. One prompt card.
@@ -733,7 +844,7 @@ body.nopanel .pchev-open{display:grid}
 .tstack.drag .tback>.topic{transition:none}
 #s-live #live-bulb.is-on{background:var(--solid-bg);color:var(--solid-fg)}
 :is(#s-rec,#s-live,#s-score,#s-reflect,#s-comm,#s-sessions,#s-deep,#s-cal) .top .btn--icon.is-on,#s-live #live-bulb.is-on,#phone.cv2 #s-deep .top .btn--icon.is-on,.bcount .btn.is-on,.hdr .btn.is-on{background:var(--solid-bg);color:var(--solid-fg);box-shadow:0 4px 10px -6px rgba(0,0,0,.35);-webkit-backdrop-filter:none;backdrop-filter:none}
-.live-fin{display:none;padding:var(--s4) var(--s4) 0}#s-live.is-reply .live-fin{display:block}
+.live-fin{display:none;padding:var(--s4) var(--s4) 0}#s-live.is-fin .live-fin{display:block}
 .live-fin .btn:disabled{opacity:.45;cursor:default}
 #s-live.counting:not(.is-comm):not(.is-prompt) .live-stack{display:none!important}
 #s-live:not(.counting) .cd{display:none}
@@ -846,6 +957,11 @@ button.mtr:active .sv{opacity:.5}
 /* cards: round bottom controls */
 .deep-bottom{align-items:center;justify-content:space-between;padding-inline:16px}
 .sess-wrap{margin-top:var(--s3)}
+@media (max-width:440px){
+  body:not(.nopanel){overflow:hidden}
+  body:not(.nopanel) .panel{position:fixed;inset:0;z-index:300;flex:none;width:auto;max-width:none;max-height:none;box-sizing:border-box;border-radius:0;overflow-y:auto;padding:max(var(--s5),env(safe-area-inset-top,0px)) var(--s5) max(var(--s5),env(safe-area-inset-bottom,0px))}
+  .logo{cursor:pointer;-webkit-tap-highlight-color:transparent}
+}
 </style></head><body>
 <script>document.body.classList.add("nopanel")</script>
 <div class="stage">
@@ -1275,7 +1391,7 @@ function openSheet(html,mount){
   if(mount)mount($('#sheet'));
   var f=$('#sheet button, #sheet textarea, #sheet input');if(f)f.focus({preventScroll:true});
 }
-function closeSheet(){if(cur==='live')live.paused=false;clearInterval(replyIv);clearInterval(rvIv);stopPlay();$('#scrim').hidden=true;$('#sheet').innerHTML=''}
+function closeSheet(){if(cur==='live')live.paused=false;clearInterval(replyIv);clearInterval(rvIv);if(window.__rvAu){try{window.__rvAu.pause()}catch(e){}window.__rvAu=null}stopPlay();$('#scrim').hidden=true;$('#sheet').innerHTML=''}
 $('#scrim').addEventListener('click',function(e){if(e.target===this)closeSheet()});
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'&&!$('#scrim').hidden)closeSheet();
@@ -1555,7 +1671,7 @@ function beginSession(mode,replyTo){
   $('#cd').hidden=false;
   var n=3;$('#cd-n').textContent=n;
   $('#cd-t').textContent=live.mode==='comm'?'Get Ready, Only One Retake':'Get Ready, No Retakes';
-  $('#s-live').classList.add('counting');$('#s-live').classList.toggle('is-comm',live.mode==='comm');$('#s-live').classList.toggle('is-reply',live.mode==='comm'&&live.replyTo!=null);
+  $('#s-live').classList.add('counting');$('#s-live').classList.toggle('is-comm',live.mode==='comm');$('#s-live').classList.toggle('is-reply',live.mode==='comm'&&live.replyTo!=null);$('#s-live').classList.toggle('is-fin',live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null));
   clearInterval(live.cdT);
   live.cdT=setInterval(function(){
     n--;
@@ -1652,13 +1768,14 @@ function micStart(){
       var AC=window.AudioContext||window.webkitAudioContext;if(!AC){st.getTracks().forEach(function(t){t.stop()});return}
       var ctx=new AC(),an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(st).connect(an);
       if(ctx.state==='suspended')ctx.resume();
-      live.mic={st:st,ctx:ctx,an:an,buf:new Float32Array(an.fftSize),sm:0,peak:0};
+      live.mic={st:st,ctx:ctx,an:an,buf:new Float32Array(an.fftSize),sm:0,peak:0};try{if(window.__recStart)window.__recStart(st)}catch(e){}
     }).catch(function(){live.mic=null});
   }catch(e){live.mic=null}
 }
 function micStop(){
   live.micReq=(live.micReq||0)+1;
   var m=live.mic;live.mic=null;
+  try{if(window.__recStop)window.__recStop(live.mode==='comm'?(live.replyTo!=null?'rep':'ans'):'day')}catch(e){}
   if(m){try{m.st.getTracks().forEach(function(t){t.stop()})}catch(e){}try{m.ctx.close()}catch(e){}}
 }
 /* Read the mic: RMS of the waveform in dB, mapped to 0..1, fast attack and slow release. Each tick keeps the peak of its slice. */
@@ -1707,7 +1824,7 @@ function tickUpdate(){
   while(live.idx+1<tk.length&&tk[live.idx+1].start<=t){live.idx++;moved=true}
   $('#live-time').textContent=fmtT(Math.floor(t));syncTimer();
   vbUpdate(t);
-  if(live.mode==='comm'&&live.replyTo!=null){var fb=$('#live-finish'),left=Math.ceil(10-t);fb.disabled=left>0;fb.textContent=left>0?'Send in '+left+'s':'Send'}
+  if(live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null)){var fb=$('#live-finish'),mn=live.mode==='daily'?30:10,lb=live.mode==='daily'?'Finish':'Send',left=Math.ceil(mn-t);fb.disabled=left>0;fb.textContent=left>0?lb+' in '+left+'s':lb}
   if(moved&&!dictOn())drawToken();
   if(!dictOn()&&t>live.end+.8&&live.idx===tk.length-1&&$('#tk-word').textContent!=='…')drawToken(true);
   if(!live.done&&live.t>=live.goal){live.done=true;if(live.mode==='daily')finishRec();else finishComm()}
@@ -1766,7 +1883,7 @@ function liveSkip(dir){
 })();
 $('#live-bulb').addEventListener('click',function(){
   live.showKw=!live.showKw;$('#live-stack').style.display=live.showKw?'':'none';$('#live-bulb').classList.toggle('is-on',live.showKw)});
-$('#live-finish').addEventListener('click',function(e){e.stopPropagation();if(live.mode==='comm'&&live.replyTo!=null&&live.t>=10&&!live.done){live.done=true;finishComm()}});
+$('#live-finish').addEventListener('click',function(e){e.stopPropagation();if(live.done)return;if(live.mode==='daily'&&live.t>=30){live.done=true;finishRec()}else if(live.mode==='comm'&&live.replyTo!=null&&live.t>=10){live.done=true;finishComm()}});
 $('#live-back').addEventListener('click',function(){
   var wasPaused=live.paused,daily=live.mode==='daily';live.paused=true;
   openSheet('<h3>Leave this recording?</h3><p>'+(daily?'This take won\'t be saved. You can start a new one anytime today.':'Your answer will be discarded.')+'</p><div class="row"><button class="btn btn--lg" data-keep type="button">Keep Going</button><button class="btn btn--solid btn--lg" data-leave type="button">Discard</button></div>',function(sh){
@@ -1777,10 +1894,11 @@ $('#live-back').addEventListener('click',function(){
   });
 });
 function finishRec(){
+  var el=Math.round(Math.min(live.t,live.goal));
   stopLive(true);
   dictStop(function(){
-    if(dictOn())saveFromText(live.dict.final,live.goal,KWSETS[live.kwI]);
-    else saveFromSchedule(live.sched,live.goal,KWSETS[live.kwI]);
+    if(dictOn())saveFromText(live.dict.final,el,KWSETS[live.kwI]);
+    else saveFromSchedule(live.sched,el,KWSETS[live.kwI]);
     stack=['home','rec'];show('score');
   });
 }
@@ -1948,9 +2066,9 @@ function renderScore(){
 var rvIv=null;
 function openRecording(){
   var L=viewLog(rvKey);if(!L)return;
-  var parts=trParts(L),N=parts.length,dur=Math.max(L.secs||60,5),pos=0,playing=false;
+  var parts=trParts(L),N=parts.length,dur=Math.max(L.secs||60,5),pos=0,playing=false,real=(rvKey===TODAY&&window.__recGet)?window.__recGet('day'):null,au=null;if(real){dur=Math.max(real.dur,1);au=new Audio(real.url);window.__rvAu=au}
   var PL='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg>',PA='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
-  openSheet('<div class="rp"><button class="btn btn--icon btn--solid" id="rp-btn" type="button" aria-label="Play">'+PL+'</button><div class="rp-bar" id="rp-bar"><i id="rp-fill"></i></div><span class="rp-t" id="rp-t"></span></div><div class="tr-only">'+parts.map(function(p){return '<span class="rp-w">'+p+'</span>'}).join(' ')+'</div><p class="rp-fine">Prototype: audio is not stored, so this plays a simulated timeline of your transcript.</p>',function(sh){
+  openSheet('<div class="rp"><button class="btn btn--icon btn--solid" id="rp-btn" type="button" aria-label="Play">'+PL+'</button><div class="rp-bar" id="rp-bar"><i id="rp-fill"></i></div><span class="rp-t" id="rp-t"></span></div><div class="tr-only">'+parts.map(function(p){return '<span class="rp-w">'+p+'</span>'}).join(' ')+'</div>'+(real?'':'<p class="rp-fine">Prototype: audio is not stored, so this plays a simulated timeline of your transcript.</p>'),function(sh){
     var ws=sh.querySelectorAll('.rp-w');
     function paint(){
       var f=pos/dur,n=Math.floor(f*N);
@@ -1958,13 +2076,14 @@ function openRecording(){
       ws.forEach(function(w,i){w.classList.toggle('on',i<n)});
       var b=$('#rp-btn');b.innerHTML=playing?PA:PL;b.setAttribute('aria-label',playing?'Pause':'Play');
     }
-    function stop(){playing=false;clearInterval(rvIv)}
+    function stop(){playing=false;clearInterval(rvIv);if(au)try{au.pause()}catch(e){}}
     $('#rp-btn').addEventListener('click',function(){
       if(playing){stop();paint();return}
       if(pos>=dur)pos=0;playing=true;clearInterval(rvIv);
+      if(au){au.currentTime=pos;var pr=au.play();if(pr&&pr.catch)pr.catch(function(){stop();paint()});au.onended=function(){pos=dur;stop();paint()};rvIv=setInterval(function(){pos=Math.min(dur,au.currentTime);paint()},100);paint();return}
       rvIv=setInterval(function(){pos+=.1;if(pos>=dur){pos=dur;stop()}paint()},100);paint();
     });
-    $('#rp-bar').addEventListener('click',function(e){var r=this.getBoundingClientRect();pos=clamp((e.clientX-r.left)/r.width,0,1)*dur;paint()});
+    $('#rp-bar').addEventListener('click',function(e){var r=this.getBoundingClientRect();pos=clamp((e.clientX-r.left)/r.width,0,1)*dur;if(au)try{au.currentTime=pos}catch(x){}paint()});
     paint();
   });
 }
@@ -2441,7 +2560,7 @@ var comm={stage:'ask',t:0,n:3,iv:0},pl={id:null,t:0,iv:0},replyIv=0;
 function waveH(seed,cnt){var h='',n=seed*9+5;cnt=cnt||28;for(var i=0;i<cnt;i++){n=(n*1103515245+12345)&0x7fffffff;h+='<i style="height:'+(6+(n>>8)%18)+'px"></i>'}return h}
 function playerHtml(id,dur,seed,sparse){return '<div class="pl"><button class="btn btn--icon btn--sm" data-play="'+id+'" data-dur="'+dur+'" aria-label="Play" type="button">'+IC.play+'</button><div class="wave'+(sparse?' sp':'')+'" id="w-'+id+'">'+waveH(seed,24)+'</div>'+(sparse?'':'<span class="dur">'+fmtT(dur)+'</span>')+'</div>'}
 function stopPlay(){
-  clearInterval(pl.iv);
+  clearInterval(pl.iv);if(pl.au){try{pl.au.pause()}catch(e){}pl.au=null}
   if(pl.id){var w=$('#w-'+pl.id);if(w)$$('i',w).forEach(function(i){i.classList.remove('on')});var b=$('[data-play="'+pl.id+'"]');if(b)b.innerHTML=IC.play}
   pl.id=null;
 }
@@ -2450,6 +2569,13 @@ document.addEventListener('click',function(e){
   var id=b.getAttribute('data-play'),dur=+b.getAttribute('data-dur');
   if(pl.id===id){stopPlay();return}
   stopPlay();pl.id=id;pl.t=0;b.innerHTML=IC.pause;
+  var rk=id==='myrep'?'rep':(id==='mine'||id==='m1')?'ans':null,real=rk&&window.__recGet?window.__recGet(rk):null;
+  if(real){
+    var au=new Audio(real.url);pl.au=au;au.onended=function(){stopPlay()};
+    pl.iv=setInterval(function(){var w=$('#w-'+id);if(!w){stopPlay();return}var d=(au.duration&&isFinite(au.duration))?au.duration:real.dur,bars=$$('i',w),n=Math.round(bars.length*au.currentTime/d);bars.forEach(function(x,i){x.classList.toggle('on',i<n)})},100);
+    var pr=au.play();if(pr&&pr.catch)pr.catch(function(){stopPlay()});
+    return;
+  }
   pl.iv=setInterval(function(){
     pl.t+=.1*speed();var w=$('#w-'+id);if(!w){stopPlay();return}
     var bars=$$('i',w),n=Math.round(bars.length*pl.t/dur);
@@ -2632,8 +2758,14 @@ show('splash');
   function set(h){document.body.classList.toggle('nopanel',h);var b=document.getElementById('panel-hide');if(b)b.setAttribute('aria-expanded',h?'false':'true');}
   document.getElementById('panel-hide').addEventListener('click',function(){set(true)});
   document.getElementById('panel-show').addEventListener('click',function(){set(false)});
+  var mob=window.matchMedia('(max-width:440px)');
+  document.addEventListener('click',function(e){
+    if(!mob.matches)return;
+    if(e.target.closest('.logo')){set(false);var pn=document.querySelector('.panel');if(pn)pn.scrollTop=0;return}
+    if(e.target.closest('.panel .jumps button'))set(true);
+  });
   set(true);
 })();
 </script>
-
+<script>if('serviceWorker'in navigator&&location.protocol!=='file:')addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})</script>
 </body></html>
