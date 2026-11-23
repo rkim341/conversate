@@ -78,9 +78,10 @@ var D={
 window.claude={use:function(n){return Promise.resolve(n==='dictation'&&SR?D:null)}};
 
 /* ---- real audio: Listen Back playback + input for the on-device Whisper pass ---- */
+/* filler detection is always on; clear any old 'Quick' choice */
+try{localStorage.removeItem('conversate-whisper')}catch(e){}
 var REC={},PEND={},FRESH={},mr=null,chunks=[],t0=0,KEY='conversate-rec',WKEY='conversate-whisper';
 function recOn(){try{return localStorage.getItem(KEY)!=='0'}catch(e){return true}}
-function whOn(){try{return localStorage.getItem(WKEY)!=='0'}catch(e){return true}}
 window.__recStart=function(st){
   /* Whisper needs the audio even if "Save Audio" is off; the toggle only controls keeping it for playback */
   if(!window.MediaRecorder)return;
@@ -126,10 +127,7 @@ addEventListener('DOMContentLoaded',function(){
     sync();return s;
   }
   function h(t){var e=document.createElement('h2');e.textContent=t;return e}
-  function note(t){var p=document.createElement('p');p.textContent=t;p.style.cssText='margin:8px 0 0;font-size:12px;line-height:1.4;opacity:.65';return p}
-  [h('Recording'),seg('recseg',KEY,['Save Audio','Off'],recOn),h('Filler Detection'),seg('whseg',WKEY,['Accurate','Quick'],whOn),
-   note('Accurate analyzes each practice take on your phone to catch ums and uhs. It downloads a 63 MB model once.')]
-   .forEach(function(n){host.insertBefore(n,prev)});
+  [h('Recording'),seg('recseg',KEY,['Save Audio','Off'],recOn)].forEach(function(n){host.insertBefore(n,prev)});
 });
 })();
 </script>
@@ -338,6 +336,7 @@ body{margin:0;background:var(--stage);background-image:var(--stage-img,none);bac
 .phone{position:relative;width:402px;max-width:100%;height:874px;background:var(--bg);border-radius:46px;overflow:hidden;
   box-shadow:0 0 0 9px var(--frame),0 30px 70px rgba(0,0,0,.2);isolation:isolate}
 @media (max-width:440px){.phone{border-radius:30px;box-shadow:0 0 0 5px var(--frame);height:min(874px,calc(100svh - 48px));min-height:620px}}
+#blackout{position:absolute;inset:0;background:#000;z-index:90;touch-action:manipulation;cursor:default;-webkit-tap-highlight-color:transparent}
 .status{position:absolute;left:0;right:0;top:0;height:var(--status-h);z-index:35;pointer-events:none;color:var(--ink)}
 .status svg{position:absolute;left:50%;top:0;width:402px;height:62px;margin-left:-201px;display:block}
 .device{position:relative;width:450px;height:920px;flex:none;isolation:isolate}
@@ -666,7 +665,7 @@ body{margin:0;background:var(--stage);background-image:var(--stage-img,none);bac
 .wave{flex:1;display:flex;align-items:center;justify-content:space-between;gap:0;height:28px;overflow:hidden;padding:0 var(--s1)}
 .wave i{flex:none;width:var(--tw,3px);border-radius:2px;background:#B2B2B2}
 .wave i.on{background:var(--ink)}
-.pl [data-play] svg{fill:currentColor}
+.pl [data-play] svg,#rp-btn svg{fill:currentColor}
 .dur{font-size:var(--t-caption);color:var(--muted);font-variant-numeric:tabular-nums}
 .comm-card{display:flex;flex-direction:column;gap:var(--s3);width:100%;border:0;text-align:left;cursor:pointer;color:var(--ink)}
 .comm-card .btn{align-self:flex-start}
@@ -868,6 +867,7 @@ body.nopanel .pchev-open{display:grid}
 #s-live #live-bulb.is-on{background:var(--solid-bg);color:var(--solid-fg)}
 :is(#s-rec,#s-live,#s-score,#s-reflect,#s-comm,#s-sessions,#s-deep,#s-cal) .top .btn--icon.is-on,#s-live #live-bulb.is-on,#phone.cv2 #s-deep .top .btn--icon.is-on,.bcount .btn.is-on,.hdr .btn.is-on{background:var(--solid-bg);color:var(--solid-fg);box-shadow:0 4px 10px -6px rgba(0,0,0,.35);-webkit-backdrop-filter:none;backdrop-filter:none}
 .live-fin{display:none;padding:var(--s4) var(--s4) 0}#s-live.is-fin .live-fin{display:block}
+.live-fin.wait{visibility:hidden;pointer-events:none}
 .live-fin .btn:disabled{opacity:.45;cursor:default}
 #s-live.counting:not(.is-comm):not(.is-prompt) .live-stack{display:none!important}
 #s-live:not(.counting) .cd{display:none}
@@ -992,6 +992,7 @@ button.mtr:active .sv{opacity:.5}
   body{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;min-height:0;overflow:hidden;overscroll-behavior:none;touch-action:manipulation;background:var(--bg);background-image:none}
   .device .phone{position:fixed;top:0;right:0;bottom:0;left:0;width:auto;height:auto}
   .screen .scroll::after{content:"";display:block;flex:none;height:env(safe-area-inset-bottom,0px)}
+  html.ios-fit .device .phone{height:var(--app-h);bottom:auto}
 }</style></head><body></head><body>
 <script>document.body.classList.add("nopanel")</script>
 <div class="stage">
@@ -1180,6 +1181,7 @@ button.mtr:active .sv{opacity:.5}
 
     <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
     <div class="toast" id="toast" role="status"></div>
+    <div id="blackout" hidden aria-hidden="true"></div>
     <div class="status" aria-hidden="true">
       <svg viewBox="0 0 402 62" width="402" height="62" fill="currentColor"><path transform="translate(59 22)" fill-rule="evenodd" d="M17.19 12.19 16.31 12.81 16.06 13.69 16.44 14.44 17.06 14.81 17.69 14.81 18.56 14.06 18.81 13.31 18.31 12.44 17.81 12.19ZM17.31 5.81 16.19 6.31 16.06 7.44 16.44 7.94 17.56 8.31 18.69 7.69 18.81 6.69 18.44 6.19ZM36.44 4.06 34.44 5.31 33.06 6.56 33.06 7.69 33.31 7.94 33.94 7.94 35.31 6.69 35.81 6.69 36.19 7.06 36.31 7.44 36.19 15.44 36.56 16.31 37.69 16.44 38.19 16.19 38.44 15.69 38.44 5.06 38.56 4.81 38.19 4.19ZM26.56 4.06 26.06 4.44 25.31 5.56 24.94 6.44 24.06 7.56 23.94 8.06 23.19 8.94 22.69 10.19 21.56 11.69 21.19 12.56 21.19 13.44 21.44 13.81 22.44 14.06 26.69 14.06 27.31 14.56 27.31 15.44 27.56 16.06 28.06 16.44 28.81 16.44 29.19 16.19 29.44 15.69 29.56 14.44 30.56 14.06 30.94 13.69 31.06 12.81 30.69 12.31 29.94 12.06 29.44 11.56 29.44 5.06 29.56 4.94 29.44 4.44 28.81 4.06ZM27.06 6.81 27.44 7.44 27.44 11.44 27.19 11.94 26.44 12.44 24.44 12.44 23.81 12.19 23.56 11.81 23.69 11.19 24.56 10.19 25.06 8.94 25.56 8.44 26.06 7.31 26.44 6.94ZM8.19 3.81 6.69 4.06 5.69 4.69 4.94 5.44 4.06 6.94 4.06 9.44 4.44 10.31 5.44 11.44 7.44 12.19 9.31 12.06 10.56 11.31 10.94 11.31 11.19 11.56 11.19 12.94 10.94 13.56 9.44 14.94 9.06 15.06 7.44 14.94 6.44 13.94 5.69 13.56 5.06 13.44 4.69 13.56 4.44 13.94 4.81 15.06 5.44 15.81 7.56 16.81 8.69 16.69 8.94 16.81 10.31 16.44 11.44 15.81 12.81 14.06 13.44 11.81 13.44 8.69 12.94 6.69 11.56 4.81 10.44 4.06ZM7.94 5.56 9.06 5.56 9.69 5.81 10.69 6.69 11.06 7.44 11.06 8.69 10.81 9.31 10.31 9.81 8.94 10.56 8.06 10.56 7.06 10.06 6.31 9.31 5.94 8.31 5.94 7.81 6.44 6.69 7.31 5.81Z"/><path transform="translate(328 22)" fill-opacity=".37" fill-rule="evenodd" d="M5.94 6.56 5.81 7.56 5.94 14.44 6.56 15.19 6.81 15.94 8.06 17.19 9.44 17.56 10.19 17.56 11.19 17.94 28.31 17.94 30.06 17.31 30.94 17.19 31.56 16.44 32.19 16.06 32.44 15.44 33.06 14.81 33.31 13.19 33.69 12.81 34.31 13.19 34.69 13.19 36.19 11.19 36.19 9.69 34.69 7.81 34.31 7.81 33.69 8.19 33.19 7.56 33.19 6.44 32.44 5.56 32.19 4.94 31.56 4.56 30.94 3.81 29.56 3.31 28.31 3.31 27.81 3.06 10.69 3.06 7.94 3.94 6.81 5.06 6.56 5.81Z"/><path transform="translate(275 22)" fill-rule="evenodd" d="M39.81 14.31 39.31 15.06 39.44 15.69 40.69 16.94 41.56 17.44 42.06 17.44 42.56 17.19 43.81 15.94 44.06 15.31 43.81 14.44 43.19 14.06 42.06 13.81 41.06 13.81ZM5.31 11.94 4.56 12.19 4.06 12.69 4.06 16.56 4.81 17.69 5.81 17.81 6.56 17.19 6.94 16.31 6.94 13.44 6.81 12.56 6.31 12.06ZM10.81 9.56 9.81 10.44 9.56 11.06 9.56 16.44 10.56 17.81 11.56 17.81 12.19 17.31 12.69 16.31 12.56 15.69 12.56 11.06 12.69 10.94 12.44 10.31 11.69 9.69ZM87.31 8.69 87.06 9.06 87.06 11.94 87.31 12.31 87.69 12.31 88.56 10.81 88.56 10.06 87.81 8.81ZM35.94 11.06 35.94 11.81 36.56 12.69 37.44 12.69 38.69 11.69 39.81 11.06 40.44 10.94 43.19 10.94 45.44 12.06 45.94 12.56 46.31 12.69 47.06 12.56 47.69 11.81 47.56 10.81 47.19 10.44 45.94 9.81 45.44 9.31 42.56 8.69 41.19 8.69 38.06 9.31 37.31 9.94 36.44 10.31ZM16.44 7.19 15.56 7.81 15.31 8.44 15.31 15.69 15.19 16.31 15.69 17.44 16.31 17.81 17.19 17.81 17.81 17.31 18.06 16.56 18.06 9.19 18.19 8.69 17.94 7.81 17.44 7.19ZM22.06 4.56 21.56 4.81 21.06 5.56 21.06 16.56 21.81 17.69 22.81 17.81 23.56 17.19 23.94 16.31 23.94 5.81 23.69 5.19 23.31 4.81 22.81 4.56ZM60.06 5.81 59.56 8.06 59.56 12.94 60.19 15.44 61.56 16.81 63.81 17.06 81.81 17.06 83.44 16.81 84.94 15.44 85.56 14.06 85.69 8.31 85.44 6.56 84.94 5.56 83.81 4.44 83.06 4.06 82.19 3.94 82.06 4.06 81.19 3.94 63.19 3.94 61.44 4.31ZM32.19 7.81 32.31 8.44 32.69 8.81 33.69 8.94 36.31 7.06 38.69 6.06 40.19 5.81 43.69 5.81 44.56 5.94 45.94 6.69 47.31 7.06 49.81 8.94 50.44 8.94 51.06 8.44 51.06 7.56 50.69 6.94 48.69 5.31 47.69 5.06 47.06 4.56 46.19 4.19 44.94 4.06 43.31 3.56 40.19 3.56 39.31 3.94 37.81 4.06 37.06 4.31 36.06 4.94 35.69 4.94 34.69 5.44 34.19 5.94 33.56 6.19 32.31 7.44Z"/></svg>
     </div>
@@ -1457,6 +1459,7 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){if(
 function scSync(){$$('.screen.vl').forEach(function(sc){var c=sc.querySelector('.scroll,.comm-body'),t=sc.querySelector(':scope>.top');if(t&&!sc.hidden)sc.style.setProperty('--top-h',t.offsetHeight+'px');sc.classList.toggle('sc',!!c&&c.scrollTop>2)})}
 document.addEventListener('scroll',function(e){var t=e.target;if(t&&t.classList&&(t.classList.contains('scroll')||t.classList.contains('comm-body'))){var sc=t.closest('.screen');if(sc)sc.classList.toggle('sc',t.scrollTop>2)}},true);
 function show(name){
+  if(name!=='live'){var bo=$('#blackout');if(bo)bo.hidden=true}
   if(cur==='live'&&name!=='live')stopLive();
   if(cur==='comm'&&name!=='comm')stopComm();
   if(name!=='deep')deep.queue=null;
@@ -1695,14 +1698,14 @@ function statsFrom(sched,t){
   return s;
 }
 function beginSession(mode,replyTo){
-  live.mode=mode||'daily';live.goal=live.mode==='comm'?30:60;live.replyTo=replyTo==null?null:replyTo;live.armed=true;if(VOICE)micStart();dictBegin();if(VOICE&&live.mode==='daily'&&window.__whisper&&window.__whisper.enabled())setTimeout(function(){if(live.armed)window.__whisper.warm()},5000);
+  live.mode=mode||'daily';(function(){var f=$('#live-finish');if(f){f.disabled=true;f.parentNode.classList.toggle('wait',live.mode==='daily')}})();live.goal=live.mode==='comm'?30:60;live.replyTo=replyTo==null?null:replyTo;live.armed=true;if(VOICE)micStart();dictBegin();if(VOICE&&live.mode==='daily'&&window.__whisper&&window.__whisper.enabled())setTimeout(function(){if(live.armed)window.__whisper.warm()},5000);
   go('live');
   if(live.mode==='daily')live.kwI=kwState().i;
   resetLive();
   $('#cd').hidden=false;
   var n=3;$('#cd-n').textContent=n;
   $('#cd-t').textContent=live.mode==='comm'?'Get Ready, Only One Retake':'Get Ready, No Retakes';
-  $('#s-live').classList.add('counting');$('#s-live').classList.toggle('is-comm',live.mode==='comm');$('#s-live').classList.toggle('is-reply',live.mode==='comm'&&live.replyTo!=null);$('#s-live').classList.toggle('is-fin',live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null));
+  $('#s-live').classList.add('counting');$('#s-live').classList.toggle('is-comm',live.mode==='comm');$('#s-live').classList.toggle('is-reply',live.mode==='comm'&&live.replyTo!=null);$('#s-live').classList.toggle('is-fin',live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null));$('.live-fin').classList.toggle('wait',live.mode==='daily');
   clearInterval(live.cdT);
   live.cdT=setInterval(function(){
     n--;
@@ -1713,7 +1716,7 @@ function beginSession(mode,replyTo){
 function resetLive(){
   var daily=live.mode==='daily',kw=daily?KWSETS[live.kwI]:['','',''];
   var sc=buildSchedule(kw,daily?null:commTpl());
-  live.sched=sc;live.t=0;live.vb=null;vbInit();live.idx=-1;live.hit={};live.paused=false;live.hide=false;live.done=false;live.end=sc.end;
+  live.sched=sc;live.t=0;live.vb=null;vbInit();live.idx=-1;live.hit={};live.paused=false;live.hide=false;$('#blackout').hidden=true;live.done=false;live.end=sc.end;
   $('#s-live').classList.remove('hide','paused');
   var rp=live.replyTo!=null?ANS[live.replyTo]:null;
   $('#live-label').textContent=daily?(live.noTopic?'Prompt':'Talk about'):rp?'Replying to':'Question';
@@ -1855,7 +1858,7 @@ function tickUpdate(){
   while(live.idx+1<tk.length&&tk[live.idx+1].start<=t){live.idx++;moved=true}
   $('#live-time').textContent=fmtT(Math.floor(t));syncTimer();
   vbUpdate(t);
-  if(live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null)){var fb=$('#live-finish'),mn=live.mode==='daily'?30:10,lb=live.mode==='daily'?'Finish':'Send',left=Math.ceil(mn-t);fb.disabled=left>0;fb.textContent=left>0?lb+' in '+left+'s':lb}
+  if(live.mode==='daily'||(live.mode==='comm'&&live.replyTo!=null)){var fb=$('#live-finish'),mn=live.mode==='daily'?30:10,lb=live.mode==='daily'?'Finish':'Send',left=Math.ceil(mn-t);fb.disabled=left>0;fb.textContent=left>0?lb+' in '+left+'s':lb;fb.parentNode.classList.toggle('wait',live.mode==='daily'&&left>0)}
   if(moved&&!dictOn())drawToken();
   if(!dictOn()&&t>live.end+.8&&live.idx===tk.length-1&&$('#tk-word').textContent!=='…')drawToken(true);
   if(!live.done&&live.t>=live.goal){live.done=true;if(live.mode==='daily')finishRec();else finishComm()}
@@ -1874,8 +1877,10 @@ function drawToken(silence){
   w.style.animation='none';void w.offsetWidth;w.style.animation='fadein .16s ease both';
 }
 function syncTimer(){$('#s-live').classList.toggle('tm-off',live.hide&&live.goal-Math.min(live.t,live.goal)>10)}
-$('#btn-hide').addEventListener('click',function(e){e.stopPropagation();live.hide=true;$('#s-live').classList.add('hide');syncTimer()});
-$('#s-live').addEventListener('click',function(){if(live.hide){live.hide=false;$('#s-live').classList.remove('hide');syncTimer()}});
+function unblack(){live.hide=false;$('#s-live').classList.remove('hide');syncTimer();$('#blackout').hidden=true}
+$('#btn-hide').addEventListener('click',function(e){e.stopPropagation();live.hide=true;$('#s-live').classList.add('hide');syncTimer();$('#blackout').hidden=false});
+$('#blackout').addEventListener('click',function(e){e.stopPropagation();unblack()});
+$('#s-live').addEventListener('click',function(){if(live.hide)unblack()});
 var LPROMPTS=['What is something you are looking forward to?','What made you smile this week?','Describe a place where you feel calm.','What is a small win from today?','What could you teach someone in five minutes?','Who has shaped the way you think?','What are you curious about lately?','Describe your ideal slow morning.','What is the best thing you have eaten lately?','What are you into right now that you could talk about for an hour?','What is something you recommend to everyone?','Tell me about a time you were glad you said yes.','What is something you taught yourself?','You meet someone at an event. What would you say first?','Tell me about your week, then say what you would ask me back.'];
 function livePrompt(d){
   if(d)live.pI=((live.pI||0)+d+LPROMPTS.length)%LPROMPTS.length;
@@ -2118,13 +2123,13 @@ function openRecording(){
   var L=viewLog(rvKey);if(!L)return;
   var parts=trParts(L),N=parts.length,dur=Math.max(L.secs||60,5),pos=0,playing=false,real=(rvKey===TODAY&&window.__recGet)?window.__recGet('day'):null,au=null;if(real){dur=Math.max(real.dur,1);au=new Audio(real.url);window.__rvAu=au}
   var PL='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg>',PA='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
-  openSheet('<div class="rp"><button class="btn btn--icon btn--solid" id="rp-btn" type="button" aria-label="Play">'+PL+'</button><div class="rp-bar" id="rp-bar"><i id="rp-fill"></i></div><span class="rp-t" id="rp-t"></span></div><div class="tr-only">'+parts.map(function(p){return '<span class="rp-w">'+p+'</span>'}).join(' ')+'</div>'+(real?'':'<p class="rp-fine">Prototype: audio is not stored, so this plays a simulated timeline of your transcript.</p>'),function(sh){
+  openSheet('<h3 class="lb-h">Listen back</h3><div class="pl"><button class="btn btn--icon btn--sm" id="rp-btn" type="button" aria-label="Play">'+IC.play+'</button><div class="wave" id="rp-wave">'+waveH(3,24)+'</div><span class="dur">'+fmtT(dur)+'</span></div><div class="tr-only" style="margin-top:var(--s5)">'+parts.map(function(p){return '<span class="rp-w">'+p+'</span>'}).join(' ')+'</div>'+(real?'':'<p class="rp-fine">Prototype: audio is not stored, so this plays a simulated timeline of your transcript.</p>'),function(sh){
     var ws=sh.querySelectorAll('.rp-w');
     function paint(){
       var f=pos/dur,n=Math.floor(f*N);
-      $('#rp-fill').style.width=(f*100)+'%';$('#rp-t').textContent=fmtT(Math.floor(pos))+' / '+fmtT(dur);
+      var bars=sh.querySelectorAll('#rp-wave i'),nb=Math.round(f*bars.length);bars.forEach(function(x,i){x.classList.toggle('on',i<nb)});
       ws.forEach(function(w,i){w.classList.toggle('on',i<n)});
-      var b=$('#rp-btn');b.innerHTML=playing?PA:PL;b.setAttribute('aria-label',playing?'Pause':'Play');
+      var b=$('#rp-btn');b.innerHTML=playing?IC.pause:IC.play;b.setAttribute('aria-label',playing?'Pause':'Play');
     }
     function stop(){playing=false;clearInterval(rvIv);if(au)try{au.pause()}catch(e){}}
     $('#rp-btn').addEventListener('click',function(){
@@ -2133,7 +2138,7 @@ function openRecording(){
       if(au){au.currentTime=pos;var pr=au.play();if(pr&&pr.catch)pr.catch(function(){stop();paint()});au.onended=function(){pos=dur;stop();paint()};rvIv=setInterval(function(){pos=Math.min(dur,au.currentTime);paint()},100);paint();return}
       rvIv=setInterval(function(){pos+=.1;if(pos>=dur){pos=dur;stop()}paint()},100);paint();
     });
-    $('#rp-bar').addEventListener('click',function(e){var r=this.getBoundingClientRect();pos=clamp((e.clientX-r.left)/r.width,0,1)*dur;if(au)try{au.currentTime=pos}catch(x){}paint()});
+    $('#rp-wave').addEventListener('click',function(e){var r=this.getBoundingClientRect();pos=clamp((e.clientX-r.left)/r.width,0,1)*dur;if(au)try{au.currentTime=pos}catch(x){}paint()});
     paint();
   });
 }
@@ -2818,5 +2823,6 @@ show('splash');
 })();
 </script>
 
+<script>(function(){var st=window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);if(!st)return;var ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);if(!ios)return;document.documentElement.classList.add('ios-fit');function fit(){var sh=Math.max(screen.height,screen.width),h=innerHeight>innerWidth?Math.max(innerHeight,sh):innerHeight;document.documentElement.style.setProperty('--app-h',h+'px')}fit();addEventListener('resize',fit);addEventListener('orientationchange',function(){setTimeout(fit,250)})})();</script>
 <script>if('serviceWorker'in navigator&&location.protocol!=='file:')addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})</script>
 </body></html>
