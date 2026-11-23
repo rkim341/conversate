@@ -992,6 +992,7 @@ button.mtr:active .sv{opacity:.5}
   body{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;min-height:0;overflow:hidden;overscroll-behavior:none;touch-action:manipulation;background:var(--bg);background-image:none}
   .device .phone{position:fixed;top:0;right:0;bottom:0;left:0;width:auto;height:auto}
   .screen .scroll::after{content:"";display:block;flex:none;height:env(safe-area-inset-bottom,0px)}
+  html.ios-fit,html.ios-fit body{height:var(--app-h);min-height:var(--app-h);bottom:auto;overflow:hidden}
   html.ios-fit .device .phone{height:var(--app-h);bottom:auto}
 }</style></head><body></head><body>
 <script>document.body.classList.add("nopanel")</script>
