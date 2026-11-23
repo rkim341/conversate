@@ -5,10 +5,16 @@ var enc=null,dec=null,MEL=null,TOK=null,loading=null;
 var PROMPT=[471,3020,11,1309,502,892,588,11,289,3020,986,16805,11,994,338,644,314,1101,11,588,11,3612,13];
 var SUP={};[1,2,7,8,9,10,14,25,26,27,28,29,31,58,59,60,61,62,63,90,91,92].forEach(function(i){SUP[i]=1});
 function post(m){self.postMessage(m)}
-async function getBuf(url,onp){
+async function getBuf(name,onp){
+  /* the model files may sit in model/ or at the top level next to index.html */
+  var urls=['model/'+name,name],last=null;
+  for(var i=0;i<urls.length;i++){try{return await getBuf1(urls[i],onp)}catch(e){last=e}}
+  throw last;
+}
+async function getBuf1(url,onp){
   var cache=null;try{cache=await caches.open('conversate-model-v1')}catch(e){}
   if(cache){var hit=await cache.match(url);if(hit){var b=await hit.arrayBuffer();onp(b.byteLength);return new Uint8Array(b)}}
-  var r=await fetch(url);if(!r.ok)throw new Error('fetch '+url+' '+r.status);
+  var r=await fetch(url);if(!r.ok||/text\/html/.test(r.headers.get('content-type')||''))throw new Error('fetch '+url+' '+r.status);
   var len=+r.headers.get('content-length')||0,rd=r.body.getReader(),chunks=[],got=0;
   for(;;){var x=await rd.read();if(x.done)break;chunks.push(x.value);got+=x.value.length;onp(x.value.length)}
   var out=new Uint8Array(got),o=0;chunks.forEach(function(c){out.set(c,o);o+=c.length});
@@ -22,11 +28,11 @@ async function init(){
     var TOTAL=12937772+50022422+64320+645641,done=0;
     function onp(n){done+=n;post({type:'progress',pct:Math.min(99,Math.round(done/TOTAL*100))})}
     post({type:'progress',pct:0});
-    var m=await getBuf('model/mel80.bin',onp);MEL=new Float32Array(m.buffer,m.byteOffset,80*201);
-    var t=await getBuf('model/tokens.json',onp);var js=JSON.parse(new TextDecoder().decode(t));
+    var m=await getBuf('mel80.bin',onp);MEL=new Float32Array(m.buffer,m.byteOffset,80*201);
+    var t=await getBuf('tokens.json',onp);var js=JSON.parse(new TextDecoder().decode(t));
     TOK=js.map(function(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u});
-    var eb=await getBuf('model/enc.bin',onp);
-    var parts=[];for(var i=1;i<=3;i++)parts.push(await getBuf('model/dec.p'+i+'.bin',onp));
+    var eb=await getBuf('enc.bin',onp);
+    var parts=[];for(var i=1;i<=3;i++)parts.push(await getBuf('dec.p'+i+'.bin',onp));
     var dl=0;parts.forEach(function(p){dl+=p.length});var db=new Uint8Array(dl),o=0;parts.forEach(function(p){db.set(p,o);o+=p.length});parts=null;
     post({type:'progress',pct:99,stage:'load'});
     var opt={executionProviders:['wasm'],graphOptimizationLevel:'all'};
